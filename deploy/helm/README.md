@@ -37,6 +37,9 @@ helm upgrade openviking ./deploy/helm/openviking --reuse-values --set image.tag=
 For a first-time installation, add `--set image.tag=...` to the install command
 above, alongside the API key settings.
 
+We recommend the `ghcr.io` image. If `ghcr.io` is hard to reach, add
+`--set image.repository=openviking-cn-beijing.cr.volces.com/volcengine/openviking`.
+
 ### Install with Custom Values
 
 Create a `my-values.yaml` file:

@@ -1,3 +1,5 @@
+import { YamlMetadata } from './yaml-metadata'
+import { splitMarkdownFrontmatter } from '#/lib/markdown-frontmatter'
 import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react'
 import type { ComponentProps, ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -228,7 +230,9 @@ function directoryLevelPreview(
 }
 
 function useDirectoryPreview(file: VikingFsEntry | null) {
-  const enabled = Boolean(file?.isDir)
+  const enabled = Boolean(
+    file?.isDir && normalizeDirUri(file.uri) !== 'viking://',
+  )
   const abstractQuery = useQuery({
     enabled,
     queryKey: ['viking-directory-sidecar', file?.uri, 'abstract'],
@@ -1357,6 +1361,7 @@ export function FilePreview({
     () => memoryFieldsDisplayContent(preview?.content || ''),
     [preview?.content],
   )
+  const frontmatter = useMemo(() => splitMarkdownFrontmatter(displayContent || ''), [displayContent])
   const okfDocument = useMemo(
     () =>
       file && preview?.fileType === 'markdown'
@@ -1906,7 +1911,7 @@ export function FilePreview({
                     onNavigate={onNavigate}
                     rawFrontmatter={okfDocument.rawFrontmatter}
                   />
-                ) : null}
+                ) : frontmatter ? <YamlMetadata rawFrontmatter={frontmatter.rawFrontmatter} defaultOpen /> : null}
                 <article className="prose prose-sm max-w-none break-words dark:prose-invert dark:prose-pre:bg-muted-foreground/20">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
@@ -1934,7 +1939,7 @@ export function FilePreview({
                   >
                     {okfDocument
                       ? okfDocument.body || emptyFileText
-                      : displayContent || emptyFileText}
+                      : (frontmatter?.body ?? displayContent) || emptyFileText}
                   </ReactMarkdown>
                 </article>
               </div>

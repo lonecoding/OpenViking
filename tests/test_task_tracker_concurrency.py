@@ -172,6 +172,23 @@ async def test_owner_loop_dispatcher_runs_foreign_loop_work_on_owner_loop():
 
 
 @pytest.mark.asyncio
+async def test_owner_loop_dispatcher_uses_explicit_owner_loop():
+    from openviking.service.task_tracker_concurrency import OwnerLoopDispatcher
+
+    owner_loop = asyncio.get_running_loop()
+    dispatcher = await asyncio.to_thread(OwnerLoopDispatcher, owner_loop)
+    work_loop: asyncio.AbstractEventLoop | None = None
+
+    async def work() -> None:
+        nonlocal work_loop
+        work_loop = asyncio.get_running_loop()
+
+    await asyncio.to_thread(lambda: asyncio.run(dispatcher.run(work)))
+
+    assert work_loop is owner_loop
+
+
+@pytest.mark.asyncio
 async def test_owner_loop_dispatcher_propagates_foreign_cancellation():
     from openviking.service.task_tracker_concurrency import OwnerLoopDispatcher
 

@@ -213,7 +213,7 @@ Embedding model configuration for vector search, supporting dense, sparse, and h
 |-----------|------|-------------|
 | `max_concurrent` | int | Maximum concurrent embedding requests (`embedding.max_concurrent`, default: `10`; must be `>= 1`) |
 | `max_retries` | int | Maximum retry attempts for transient embedding provider errors (`embedding.max_retries`, default: `3`; `0` disables retry) |
-| `text_source` | str | Text used for vectorizing text files. `content_only` reads raw content, `summary_first` uses summary when available and falls back to content, `summary_only` uses only summary. Default: `content_only` |
+| `text_source` | str | Text used for vectorizing text files. `content_only` reads raw content, `summary_first` uses summary when available and falls back to content, `summary_only` is a deprecated alias for `summary_first`; existing configurations still load, log a warning, and normalize to `summary_first`. Default: `content_only` |
 | `max_input_tokens` | int | Maximum estimated raw text tokens sent to the embedding model when content is used. Default: `4096` |
 | `provider` | str | `"openai"`, `"azure"`, `"volcengine"`, `"vikingdb"`, `"jina"`, `"ollama"`, `"gemini"`, `"voyage"`, `"dashscope"`, `"minimax"`, `"cohere"`, `"litellm"`, or `"local"` |
 | `api_key` | str | API key |
@@ -1006,6 +1006,24 @@ Grep engine configuration for content pattern search. These settings are server-
 
 For VikingDB / Volcengine FullText grep, OpenViking writes a `content` text field for BM25 recall. The source context keeps the full content, while the vector-store write payload truncates this field to **1 MB** at the final adapter boundary to stay within backend payload limits. Only VikingDB-backed backends use `content`; on all other backends (`local`, `cuvs`, `http`) the field is not written.
 
+### glob
+
+Glob engine configuration for path pattern matching. These settings are server-side only and cannot be overridden per request.
+
+```json
+{
+  "glob": {
+    "engine": "fs",
+    "switch_to_remote_threshold": 100
+  }
+}
+```
+
+| Parameter | Type | Description | Default |
+|-----------|------|-------------|---------|
+| `engine` | str | Path matching engine mode: `"auto"` uses remote `path_glob` processing when a VikingDB / Volcengine vector store is available and the search-scope record count reaches the threshold; otherwise it falls back to local filesystem search. `"fs"` forces local filesystem search only. | `"fs"` |
+| `switch_to_remote_threshold` | int | Record-count threshold at which `auto` mode switches to remote `path_glob`. Set to `0` to always use remote path matching. Must be ≥ 0. | `100` |
+
 ### storage
 
 Storage configuration for context data, including file storage (RAGFS) and vector database storage (VectorDB).
@@ -1130,7 +1148,7 @@ Notes:
 
 See the [Multi-Write Storage Guide](./13-multi-write-storage.md) for more examples.
 
-##### Global Cache Provider and CacheFS Configuration
+##### Global Cache Provider, CacheFS, and PathLock Configuration
 
 The top-level `cache` section is a sibling of `storage`. Its public shape is Provider-neutral:
 
@@ -1148,6 +1166,15 @@ The top-level `cache` section is a sibling of `storage`. Its public shape is Pro
 | `max_file_size_bytes` | int | Maximum full-file object size admitted to cache | `1048576` |
 | `traversal_mode` | str | `backend` or `cached_traversal` | `backend` |
 | `bypass_prefixes` | array[str] | Path prefixes that bypass cache | `[]` |
+
+`storage.agfs.pathlock` selects the PathLock storage provider:
+
+| Parameter | Type | Description | Default |
+|-----------|------|-------------|---------|
+| `provider` | str | `filesystem`, `memory`, or `cache`; `cache` uses the shared Redis CacheRuntime | `filesystem` |
+| `namespace` | str (optional) | OpenViking instance name used in Redis PathLock keys; required when `provider=cache` | `null` |
+| `lock_expire_secs` | float | Seconds before an unrefreshed lock becomes stale; must be at least `1.0` | `30.0` |
+| `lock_timeout_secs` | float | Deprecated and ignored; runtime wait timeout remains `0.0` | `0.0` |
 
 ```json
 {
@@ -1174,13 +1201,18 @@ The top-level `cache` section is a sibling of `storage`. Its public shape is Pro
       "queuefs": {
         "backend": "cache",
         "cache_key_prefix": "production"
+      },
+      "pathlock": {
+        "provider": "cache",
+        "namespace": "production",
+        "lock_expire_secs": 30.0
       }
     }
   }
 }
 ```
 
-The canonical configuration has no global `cache.enabled`. CacheRuntime is initialized when CacheFS or QueueFS selects `backend=cache`. When all modules use local backends, `cache.params` is not parsed and no Provider connection is opened.
+The canonical configuration has no global `cache.enabled`. CacheRuntime is initialized when CacheFS or QueueFS selects `backend=cache`, or when PathLock selects `provider=cache`. Cache-backed PathLock currently requires `cache.provider=redis`; DynamicProvider is not supported for PathLock. When all modules use local providers, `cache.params` is not parsed and no Provider connection is opened.
 
 This is a breaking configuration change. `storage.agfs.cache`, `storage.agfs.queuefs.backend="redis"`, and `storage.agfs.queuefs.redis` are rejected. Move Provider settings to top-level `cache.provider/cache.params`, select `cachefs.backend="cache"` or `queuefs.backend="cache"`, use Redis `mode="standalone"` instead of `singleton`, and use `rediss://` instead of `tls_enabled`.
 
@@ -1745,7 +1777,7 @@ For startup and deployment details see [Deployment](./03-deployment.md), for aut
 
 ## storage.transaction Section
 
-`storage.transaction` is deprecated and kept only for legacy compatibility. Use `storage.agfs.pathlock` only for active PathLock expiry configuration. When legacy fields are still present, OpenViking logs a warning at runtime; `lock_timeout` is deprecated and ignored, `lock_expire` is automatically mapped when the new field is unset, and `redo_recovery_enabled` is ignored.
+`storage.transaction` is deprecated and kept only for legacy compatibility. Use `storage.agfs.pathlock` for the active PathLock provider, namespace, and expiry configuration. When legacy fields are still present, OpenViking logs a warning at runtime; `lock_timeout` is deprecated and ignored, `lock_expire` is automatically mapped when the new field is unset, and `redo_recovery_enabled` is ignored.
 
 Recommended configuration:
 
@@ -1754,6 +1786,7 @@ Recommended configuration:
   "storage": {
     "agfs": {
       "pathlock": {
+        "provider": "filesystem",
         "lock_expire_secs": 30.0
       }
     }
