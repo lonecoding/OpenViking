@@ -760,8 +760,8 @@ async def test_wm_creation_passes_configured_output_language_to_prompt(client, m
         def is_available() -> bool:
             return True
 
-        async def get_completion_async(self, **kwargs):
-            prompts.append(kwargs)
+        async def get_completion_async(self, prompt="", **kwargs):
+            prompts.append({"prompt": prompt, **kwargs})
             return "# Working Memory"
 
     vlm = FakeVLM()
@@ -788,8 +788,8 @@ async def test_wm_creation_detects_language_from_multiline_user_message(client, 
         def is_available() -> bool:
             return True
 
-        async def get_completion_async(self, **kwargs):
-            prompts.append(kwargs)
+        async def get_completion_async(self, prompt="", **kwargs):
+            prompts.append({"prompt": prompt, **kwargs})
             return "# Working Memory"
 
     vlm = FakeVLM()

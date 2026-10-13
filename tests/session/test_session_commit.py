@@ -8,11 +8,13 @@ import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import openviking.session.session as session_module
 from openviking.message import TextPart
 from openviking.server.identity import RequestContext
 from openviking.service.core import OpenVikingService
 from openviking.service.task_tracker import get_task_tracker
 from openviking.session import Session
+from openviking.storage.abstract_overview import parse_abstract_overview
 
 
 async def _wait_for_task(task_id: str, timeout: float = 30.0) -> dict:
@@ -140,6 +142,17 @@ class TestCommit:
             return f"{latest_archive_overview}\n{messages[0].id}"
 
         monkeypatch.setattr(Session, "_generate_archive_summary_async", generate_summary)
+        # Working-memory batching only applies when a VLM is available; without one
+        # it intentionally falls back to a single summary over all messages.
+        real_config = session_module.get_openviking_config()
+
+        class _ConfigWithVLM:
+            vlm = SimpleNamespace(is_available=lambda: True)
+
+            def __getattr__(self, name):
+                return getattr(real_config, name)
+
+        monkeypatch.setattr(session_module, "get_openviking_config", lambda: _ConfigWithVLM())
         extract_long_term = AsyncMock(return_value=[])
         session_with_messages._session_compressor.extract_long_term_memories = extract_long_term
 
@@ -692,10 +705,13 @@ class TestCommit:
         result1 = await session.commit_async()
         await _wait_for_task(result1["task_id"])
 
-        previous_overview = await session._viking_fs.read_file(
-            f"{result1['archive_uri']}/.overview.md",
-            ctx=session.ctx,
-        )
+        # Stored overviews carry generated-by frontmatter; the summary threads the body.
+        previous_overview = parse_abstract_overview(
+            await session._viking_fs.read_file(
+                f"{result1['archive_uri']}/.overview.md",
+                ctx=session.ctx,
+            )
+        ).body.rstrip("\n")
         seen: dict[str, str] = {}
 
         session_type = type(session)
