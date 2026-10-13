@@ -877,7 +877,7 @@ class ContentWriteCoordinator:
                 uri=uri,
                 root_uri=root_uri,
                 context_type=context_type,
-                mode=mode,
+                mode=response_mode or mode,
                 written_bytes=written_bytes,
                 wait=wait,
                 queue_status=queue_status,

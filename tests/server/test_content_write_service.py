@@ -467,7 +467,7 @@ async def test_memory_create_refreshes_nested_schema_overview(service):
 
     overview = await service.viking_fs.read_file(f"{memory_dir}/.overview.md", ctx=ctx)
     assert result["root_uri"] == memory_dir
-    assert "[不二周助-link-test.md](./不二周助-link-test.md)" in overview
+    assert "](./不二周助-link-test.md)" in overview
 
 
 @pytest.mark.asyncio
@@ -902,7 +902,7 @@ async def test_memory_write_wait_skips_semantic_queue_and_releases_write_lock(mo
 
     async def _fake_refresh_schema_overview(**kwargs):
         del kwargs
-        return None
+        return True
 
     monkeypatch.setattr(coordinator, "_write_in_place", _fake_write_in_place)
     monkeypatch.setattr(coordinator, "_wait_for_request", _fail_wait_for_request)

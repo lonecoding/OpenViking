@@ -106,7 +106,11 @@ def _make_request(
     registry = get_registry()
     plugin_cls = registry.get(effective_auth_mode)
     if plugin_cls is not None:
-        app.state.auth_plugin = plugin_cls()
+        plugin = plugin_cls()
+        # Trusted mode keeps its APIKeyManager private (set by initialize()).
+        if api_key_manager is not None and hasattr(plugin, "_api_key_manager"):
+            plugin._api_key_manager = api_key_manager
+        app.state.auth_plugin = plugin
     scope = {
         "type": "http",
         "path": path,
@@ -517,13 +521,17 @@ async def test_admin_key_cannot_switch_effective_user_within_account(auth_app):
         api_key_manager=manager,
     )
 
-    with pytest.raises(PermissionDeniedError, match="X-OpenViking-Account"):
-        await resolve_identity(
-            request,
-            x_api_key=admin_key,
-            x_openviking_account=account_id,
-            x_openviking_user="alice",
-        )
+    # api_key mode ignores identity assertion headers: the key's owner is kept.
+    identity = await resolve_identity(
+        request,
+        x_api_key=admin_key,
+        x_openviking_account=account_id,
+        x_openviking_user="alice",
+    )
+
+    assert identity.role == Role.ADMIN
+    assert identity.account_id == account_id
+    assert identity.user_id == "admin_user"
 
 
 async def test_admin_key_cannot_switch_account_via_header(auth_app):
@@ -542,12 +550,16 @@ async def test_admin_key_cannot_switch_account_via_header(auth_app):
         api_key_manager=manager,
     )
 
-    with pytest.raises(PermissionDeniedError, match="X-OpenViking-Account"):
-        await resolve_identity(
-            request,
-            x_api_key=admin_key,
-            x_openviking_account="other-account",
-        )
+    # api_key mode ignores identity assertion headers: the key's account is kept.
+    identity = await resolve_identity(
+        request,
+        x_api_key=admin_key,
+        x_openviking_account="other-account",
+    )
+
+    assert identity.role == Role.ADMIN
+    assert identity.account_id == account_id
+    assert identity.user_id == "admin_user"
 
 
 async def test_user_key_resolves_to_key_user_and_cannot_switch_user(auth_app):
@@ -585,12 +597,16 @@ async def test_user_key_resolves_to_key_user_and_cannot_switch_user(auth_app):
         api_key_manager=manager,
     )
 
-    with pytest.raises(PermissionDeniedError, match="X-OpenViking-User"):
-        await resolve_identity(
-            forbidden_request,
-            x_api_key=user_key,
-            x_openviking_user="bob",
-        )
+    # api_key mode ignores identity assertion headers: the key's user is kept.
+    spoofed = await resolve_identity(
+        forbidden_request,
+        x_api_key=user_key,
+        x_openviking_user="bob",
+    )
+
+    assert spoofed.role == Role.USER
+    assert spoofed.account_id == account_id
+    assert spoofed.user_id == "alice"
 
 
 async def test_cross_tenant_session_get_returns_not_found(auth_client: httpx.AsyncClient, auth_app):

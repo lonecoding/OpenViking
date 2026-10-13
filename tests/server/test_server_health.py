@@ -10,7 +10,9 @@ from types import SimpleNamespace
 import httpx
 
 from openviking.server.app import _initialize_runtime_state, create_app
+from openviking.server.auth.plugins import ApiKeyAuthPlugin
 from openviking.server.config import ServerConfig
+from openviking.server.identity import ResolvedIdentity, Role
 
 
 async def test_health_endpoint(client: httpx.AsyncClient):
@@ -29,6 +31,11 @@ async def test_health_endpoint_resolves_identity_with_api_key(caplog):
             root_api_key="test-root-key",
         ),
         service=SimpleNamespace(),
+    )
+    # ASGITransport skips the lifespan that installs the auth plugin and key manager.
+    app.state.auth_plugin = ApiKeyAuthPlugin()
+    app.state.api_key_manager = SimpleNamespace(
+        resolve=lambda key: ResolvedIdentity(role=Role.ROOT, account_id=None, user_id=None)
     )
     transport = httpx.ASGITransport(app=app)
 
@@ -165,7 +172,9 @@ async def test_process_time_header(client: httpx.AsyncClient):
 
 async def test_openviking_error_handler(client: httpx.AsyncClient):
     """Requesting a non-existent resource should return structured error."""
-    resp = await client.get("/api/v1/fs/stat", params={"uri": "viking://nonexistent/path"})
+    resp = await client.get(
+        "/api/v1/fs/stat", params={"uri": "viking://resources/nonexistent/path"}
+    )
     assert resp.status_code == 404
     body = resp.json()
     assert body["status"] == "error"
@@ -177,7 +186,13 @@ async def test_404_for_unknown_route(client: httpx.AsyncClient):
     assert resp.status_code == 404
 
 
-async def test_lifespan_shutdown_ignores_cancelled_service_close():
+async def test_lifespan_shutdown_ignores_cancelled_service_close(monkeypatch):
+    # The fake service installs no TaskTracker; give the lifespan a no-op one.
+    monkeypatch.setattr(
+        "openviking.server.app.get_task_tracker",
+        lambda: SimpleNamespace(start_cleanup_loop=lambda: None, stop_cleanup_loop=lambda: None),
+    )
+
     class _Service:
         async def initialize(self):
             pass
@@ -259,6 +274,15 @@ async def test_ready_returns_200_after_initialized(monkeypatch):
         lambda config: (False, None, None),
     )
 
+    async def _healthy_embedding_probe(embedder):
+        del embedder
+        return "ok"
+
+    # Readiness probes the configured embedding provider; keep the test offline.
+    monkeypatch.setattr(
+        "openviking.server.routers.system._embedding_probe", _healthy_embedding_probe
+    )
+
     app = create_app(config=ServerConfig(), service=service)
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -304,6 +328,9 @@ async def test_initialize_runtime_state_loads_api_key_manager(monkeypatch):
         async def initialize(self):
             self._initialized = True
 
+        async def load_acl_settings(self, account_ids):
+            del account_ids
+
     class FakeAPIKeyManager:
         def __init__(self, root_key, viking_fs, api_key_hashing_enabled):
             self.root_key = root_key
@@ -314,7 +341,16 @@ async def test_initialize_runtime_state_loads_api_key_manager(monkeypatch):
         async def load(self):
             self.loaded = True
 
-    monkeypatch.setattr("openviking.server.app.APIKeyManager", FakeAPIKeyManager)
+        def get_accounts(self):
+            return []
+
+    async def _fake_setup_user_deletion(**kwargs):
+        del kwargs
+
+    monkeypatch.setattr("openviking.server.auth.plugins.api_key.APIKeyManager", FakeAPIKeyManager)
+    monkeypatch.setattr(
+        "openviking.service.user_deletion.setup_user_deletion", _fake_setup_user_deletion
+    )
 
     app = SimpleNamespace(state=SimpleNamespace(api_key_manager=None))
     service = MockService()
