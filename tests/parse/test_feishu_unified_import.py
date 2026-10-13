@@ -48,7 +48,8 @@ async def test_downloaded_file_routes_by_extension_but_normalized_markdown_does_
             tmp_path / name,
             SourceType.FEISHU,
             "https://example.feishu.cn/file/t",
-            meta={"feishu_content_kind": kind},
+            # Prepared local resources always carry resolved_name (see MediaProcessor).
+            meta={"feishu_content_kind": kind, "resolved_name": name},
         )
         await router.parse(resource)
     api.parse.assert_awaited_once()

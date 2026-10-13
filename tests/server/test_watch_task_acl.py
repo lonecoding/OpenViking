@@ -63,7 +63,8 @@ async def test_watch_task_control_files_are_root_only(bare_viking_fs, root_ctx, 
 async def test_hidden_listing_filters_watch_task_control_files_for_non_root(
     bare_viking_fs, root_ctx, user_ctx
 ):
-    async def ls_entries(path, ctx=None):
+    async def ls_entries(path, ctx=None, **kwargs):
+        del kwargs  # paging/sort arguments are irrelevant for this fixed listing
         return [
             {
                 "name": ".watch_tasks.json",

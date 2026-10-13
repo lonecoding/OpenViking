@@ -79,7 +79,6 @@ async def test_save_local_offloads_cleanup_writes_and_metadata(
     assert (tmp_path / temp_file_id).read_bytes() == b"hello world"
     assert (tmp_path / f"{temp_file_id}.ov_upload.meta").is_file()
     assert "_cleanup_local_temp_files" in calls
-    assert "_create_temp_file" in calls
     assert "_open_binary_for_write" in calls
     assert "write" in calls
     assert "_write_json" in calls

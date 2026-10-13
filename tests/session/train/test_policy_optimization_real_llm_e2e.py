@@ -35,6 +35,23 @@ from openviking.telemetry.tracer import init_tracer_from_server_config
 from openviking_cli.utils.config import get_openviking_config
 
 
+def _real_vlm_configured() -> bool:
+    try:
+        return bool(get_openviking_config().vlm.is_available())
+    except Exception:
+        return False
+
+
+# These end-to-end tests call the VLM from the real ov.conf
+# (OPENVIKING_CONFIG_FILE); skip them when no VLM is configured.
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not _real_vlm_configured(), reason="requires a real VLM configured in ov.conf"
+    ),
+]
+
+
 @pytest.fixture(scope="module", autouse=True)
 def _init_real_llm_e2e_tracer():
     """Initialize tracer from server.observability.traces in ~/.openviking/ov.conf."""

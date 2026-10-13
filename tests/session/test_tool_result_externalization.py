@@ -14,9 +14,22 @@ from openviking.session.tool_result_store import ToolResultStore
 from openviking_cli.exceptions import NotFoundError
 
 
+class _NoopPathLock:
+    async def pathlock_acquire_exact(self, path, timeout_secs=0.0):  # noqa: ANN001
+        return {"lease_ref": path, "owned": True}
+
+    async def pathlock_release(self, lease):  # noqa: ANN001
+        return None
+
+
 class MemoryVikingFS:
     def __init__(self):
         self.files = {}
+        # Session appends serialize on the session path lock.
+        self._async_agfs = _NoopPathLock()
+
+    def _uri_to_path(self, uri, ctx=None):  # noqa: ANN001
+        return "/" + uri.removeprefix("viking://")
 
     async def write_file(self, uri, content, *, ctx=None, lease_ref=None):  # noqa: ANN001
         self.files[uri] = content

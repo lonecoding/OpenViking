@@ -221,6 +221,9 @@ async def test_concurrent_requests_do_not_mix_or_leak_request_ids() -> None:
 
     handler = _CaptureHandler(records)
     server_logger.addHandler(handler)
+    # Capture INFO regardless of the configured log level.
+    previous_level = business_logger.level
+    business_logger.setLevel(logging.INFO)
     gate = asyncio.Event()
     arrivals = 0
 
@@ -243,6 +246,7 @@ async def test_concurrent_requests_do_not_mix_or_leak_request_ids() -> None:
             )
     finally:
         server_logger.removeHandler(handler)
+        business_logger.setLevel(previous_level)
 
     assert first.headers[REQUEST_ID_HEADER] == "request-first"
     assert second.headers[REQUEST_ID_HEADER] == "request-second"

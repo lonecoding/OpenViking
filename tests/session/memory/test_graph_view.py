@@ -241,11 +241,11 @@ def test_render_graph_html_edge_details_include_source_and_target_uris():
     assert "detailMeta.textContent = `${edge.link_type} · weight=${edge.weight}`;" in html
     assert "const sourceUri = edge.from || edge.source || '';" in html
     assert "const targetUri = edge.to || edge.target || '';" in html
+    # The JS template literal uses \n escapes, which render the same multi-line text.
     assert (
-        """detailContent.innerHTML = renderMarkdown(`- from_uri: ${escapeHtml(sourceUri)}
-- to_uri: ${escapeHtml(targetUri)}
-
-${escapeHtml(edge.description || '(no description)')}`);"""
+        r"detailContent.innerHTML = renderMarkdown(`- from_uri: ${escapeHtml(sourceUri)}"
+        r"\n- to_uri: ${escapeHtml(targetUri)}"
+        r"\n\n${escapeHtml(edge.description || '(no description)')}`);"
         in html
     )
 

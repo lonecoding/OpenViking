@@ -21,6 +21,7 @@ from openviking.server.api_keys import APIKeyManager, is_new_format_key
 from openviking.service.core import OpenVikingService
 from openviking_cli.session.user_id import UserIdentifier
 from openviking_cli.utils.config.open_viking_config import OpenVikingConfigSingleton
+from tests.server.conftest import _install_fake_embedder, _install_fake_vlm
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -152,7 +153,12 @@ class TestVikingFSEncryptionWithAccounts:
     ROOT_KEY = "test-root-key-for-encryption-tests-abcdef123456"
 
     @pytest_asyncio.fixture(scope="function")
-    async def openviking_service_with_encryption(self, test_data_dir: Path, encryption_config):
+    async def openviking_service_with_encryption(
+        self, test_data_dir: Path, encryption_config, monkeypatch
+    ):
+        # The config below names OpenAI with a fake key; keep model calls offline.
+        _install_fake_embedder(monkeypatch)
+        _install_fake_vlm(monkeypatch)
         """
         Fixture that provides an OpenVikingService instance with encryption enabled.
         Also initializes APIKeyManager for account management.
@@ -580,7 +586,7 @@ This is a test skill for verifying encryption functionality.
         ctx = RequestContext(user=test_user, role=Role.USER)
         root_ctx = RequestContext(user=test_user, role=Role.ROOT)
 
-        account_root_uri = f"viking://{test_account_id}"
+        account_root_uri = f"viking://user/{test_user_id}"
 
         await self._check_all_files_encrypted(account_root_uri, ctx, svc, test_data_dir)
 
@@ -779,7 +785,7 @@ This is a test skill for verifying encryption functionality.
         print("=" * 80)
 
         print("[3.1] Add memory file")
-        memory_dir_uri = f"viking://{test_account_id}/user/{test_user_id}/memories"
+        memory_dir_uri = f"viking://user/{test_user_id}/memories"
 
         # Create memories directory
         try:
@@ -802,7 +808,7 @@ This is a test skill for verifying encryption functionality.
 
         # Check all files in user directory are encrypted
         print("[3.1] Check files in user directory are encrypted")
-        user_dir_uri = f"viking://{test_account_id}/user/{test_user_id}"
+        user_dir_uri = f"viking://user/{test_user_id}"
         await self._check_all_files_encrypted(user_dir_uri, ctx, svc, test_data_dir)
 
         # 3.2 Verify various operations return unencrypted
@@ -874,7 +880,7 @@ This is a test skill for verifying encryption functionality.
 
         # Check session directory files are encrypted
         print("[4.1] Check files in session directory are encrypted")
-        session_dir_uri = f"viking://{test_account_id}/session"
+        session_dir_uri = f"viking://user/{test_user_id}/sessions"
         await self._check_all_files_encrypted(session_dir_uri, ctx, svc, test_data_dir)
 
         # 4.2 Verify various operations return unencrypted
@@ -1098,7 +1104,12 @@ class TestAddResourceWithSemanticProcessing:
     ROOT_KEY = "test-root-key-for-encryption-tests-abcdef123456"
 
     @pytest_asyncio.fixture(scope="function")
-    async def openviking_service_with_encryption(self, test_data_dir: Path, encryption_config):
+    async def openviking_service_with_encryption(
+        self, test_data_dir: Path, encryption_config, monkeypatch
+    ):
+        # The config below names OpenAI with a fake key; keep model calls offline.
+        _install_fake_embedder(monkeypatch)
+        _install_fake_vlm(monkeypatch)
         """
         Fixture that provides an OpenVikingService instance with encryption enabled.
         Also initializes APIKeyManager for account management.

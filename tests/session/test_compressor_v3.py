@@ -51,6 +51,16 @@ from openviking.telemetry import OperationTelemetry, bind_telemetry
 from openviking_cli.session.user_id import UserIdentifier
 
 
+@pytest.fixture(autouse=True)
+def _placeholder_viking_fs(monkeypatch):
+    """SessionCompressorV3() resolves VikingFS for its rollout analyzer.
+
+    Provide a placeholder so tests do not depend on another test having
+    initialized the global VikingFS; tests that need a fake FS patch it again.
+    """
+    monkeypatch.setattr("openviking.session.compressor_v3.get_viking_fs", SimpleNamespace)
+
+
 def _ctx() -> RequestContext:
     return RequestContext(user=UserIdentifier.the_default_user("u"), role=Role.ROOT)
 
@@ -537,10 +547,12 @@ async def test_train_from_extracted_cases_submits_streaming_rollout(monkeypatch)
             policies=[],
         )
 
-        async def submit_gradients(self, gradients, *, analysis=None, rollout=None):
+        async def submit_gradients(
+            self, gradients, *, analysis=None, rollout=None, batch_finalizer=None
+        ):
             submitted_gradients.append(gradients)
             submitted_analyses.append(analysis)
-            return RolloutTrainingResult(
+            result = RolloutTrainingResult(
                 analyses=[analysis] if analysis else [],
                 gradients=list(gradients),
                 plan=PolicyUpdatePlan(items=[], metadata={}),
@@ -551,6 +563,10 @@ async def test_train_from_extracted_cases_submits_streaming_rollout(monkeypatch)
                 ),
                 metadata={},
             )
+            # Like the real trainer, run the finalizer once the batch is applied.
+            if batch_finalizer is not None:
+                await batch_finalizer(result)
+            return result
 
     class FakeAnalyzer:
         async def analyze(self, rollout, context):

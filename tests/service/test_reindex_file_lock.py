@@ -11,10 +11,30 @@ from openviking.service.reindex_executor import ReindexExecutor
 from openviking_cli.session.user_id import UserIdentifier
 
 
+class _RecordingPathLock:
+    def __init__(self):
+        self.calls = []
+
+    async def pathlock_acquire_tree(self, path):
+        self.calls.append(("tree", path))
+        return {"lease_ref": "lease-1", "owned": True}
+
+    async def pathlock_acquire_exact(self, path):
+        self.calls.append(("exact", path))
+        return {"lease_ref": "lease-1", "owned": True}
+
+    async def pathlock_as_borrowed(self, lease):
+        return {**lease, "owned": False}
+
+    async def pathlock_release(self, lease):
+        self.calls.append(("release", lease["lease_ref"]))
+
+
 class _FakeVikingFS:
     def __init__(self, uri: str, path: str):
         self._uri = uri
         self._path = path
+        self._async_agfs = _RecordingPathLock()
 
     def _uri_to_path(self, uri: str, ctx=None):
         assert uri == self._uri
@@ -33,12 +53,11 @@ class _FakeVikingFS:
         return "# Profile\nSingle file reindex source.\n"
 
 
-async def test_reindex_single_file_uri_acquires_tree_lock_without_not_a_directory(
-    agfs_client, test_dir, monkeypatch, caplog
+async def test_reindex_single_file_uri_uses_exact_lock_without_not_a_directory(
+    monkeypatch, caplog
 ):
     uri = "viking://resources/profile.md"
-    path = f"{test_dir}/profile.md"
-    agfs_client.write(path, b"# Profile\nSingle file reindex source.\n")
+    path = "/local/acc1/resources/profile.md"
 
     viking_fs = _FakeVikingFS(uri, path)
     service = SimpleNamespace(
@@ -72,3 +91,5 @@ async def test_reindex_single_file_uri_acquires_tree_lock_without_not_a_director
     assert result["rebuilt_records"] == 1
     assert "Not a directory" not in caplog.text
     assert "Failed to create lock file" not in caplog.text
+    # A file URI is locked exactly; a tree lock would treat the file as a directory.
+    assert viking_fs._async_agfs.calls == [("exact", path), ("release", "lease-1")]

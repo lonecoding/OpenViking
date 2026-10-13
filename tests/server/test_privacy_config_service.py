@@ -6,13 +6,14 @@ import asyncio
 import pytest
 
 from openviking.core.namespace import canonical_user_root
+from openviking.privacy.service import UserPrivacyConfigService
 from openviking.privacy.skill_extractor import extract_skill_privacy_values
 from openviking.privacy.skill_placeholder import placeholderize_skill_content_with_blocks
-from openviking.privacy.service import UserPrivacyConfigService
 from openviking.server.identity import RequestContext, Role
 from openviking.storage.viking_fs import VikingFS
 from openviking_cli.exceptions import NotFoundError
 from openviking_cli.session.user_id import UserIdentifier
+from tests.server.conftest import _install_fake_vlm
 
 
 class _MemoryPrivacyStorage:
@@ -210,7 +211,9 @@ async def test_skill_read_restores_placeholder_for_agent_segment_name(service):
 
 
 @pytest.mark.asyncio
-async def test_skill_privacy_extraction_returns_content_blocks():
+async def test_skill_privacy_extraction_returns_content_blocks(monkeypatch):
+    # Offline: the fake VLM answers the privacy-extraction prompt deterministically.
+    _install_fake_vlm(monkeypatch)
     content = 'api_key: "secret-xyz"\nbase_url: "https://example.com"\n'
     result = await extract_skill_privacy_values(
         skill_name="extract-block-skill",

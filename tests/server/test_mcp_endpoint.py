@@ -1496,11 +1496,12 @@ async def test_write_append_appends_to_existing(service):
     assert body == "line1\nline2\n"
 
 
-async def test_write_append_missing_file_fails(service):
-    with pytest.raises(NotFoundError):
-        await write(
-            uri="viking://resources/test_write_append_missing.md", content="x", mode="append"
-        )
+async def test_write_append_missing_file_creates_it(service):
+    # replace/append are idempotent: a missing target starts from an empty file.
+    uri = "viking://resources/test_write_append_missing.md"
+    await write(uri=uri, content="x", mode="append")
+    body = await service.fs.read(uri, ctx=DEFAULT_CTX)
+    assert body == "x"
 
 
 async def test_write_create_rejects_disallowed_extension(service):
