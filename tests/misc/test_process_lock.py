@@ -3,6 +3,7 @@
 import os
 import tempfile
 
+import openviking.utils.process_lock as process_lock_module
 from openviking.utils.process_lock import (
     LOCK_FILENAME,
     DataDirectoryLocked,
@@ -35,10 +36,12 @@ class TestProcessLock:
             with open(lock_path) as f:
                 assert int(f.read().strip()) == os.getpid()
 
-    def test_live_pid_blocks_acquisition(self):
+    def test_live_pid_blocks_acquisition(self, monkeypatch):
+        # On Linux _is_pid_alive also checks /proc/<pid>/cmdline, so the real
+        # PID 1 (init) counts as a recycled PID; pretend it is a live holder.
+        monkeypatch.setattr(process_lock_module, "_is_pid_alive", lambda pid: pid == 1)
         with tempfile.TemporaryDirectory() as tmpdir:
             lock_path = os.path.join(tmpdir, LOCK_FILENAME)
-            # PID 1 (init/launchd) is always alive.
             with open(lock_path, "w") as f:
                 f.write("1")
             try:

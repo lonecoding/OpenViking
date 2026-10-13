@@ -178,7 +178,7 @@ class TestObserverService:
     @patch("openviking.service.debug_service.ModelsObserver")
     def test_models_property(self, mock_observer_cls):
         """Test models property returns ComponentStatus."""
-        mock_config = MagicMock(spec=["vlm"])  # Only allow vlm attribute
+        mock_config = MagicMock(spec=["vlm", "embedding", "rerank"], embedding=None, rerank=None)
         mock_vlm_instance = MagicMock()
         mock_config.vlm.get_vlm_instance.return_value = mock_vlm_instance
 
@@ -243,7 +243,7 @@ class TestObserverService:
             "conflicts": [],
         }
 
-        mock_config = MagicMock(spec=["vlm"])  # Only allow vlm attribute
+        mock_config = MagicMock(spec=["vlm", "embedding", "rerank"], embedding=None, rerank=None)
         mock_config.vlm.get_vlm_instance.return_value = MagicMock()
         service = ObserverService(vikingdb=MagicMock(), config=mock_config)
         status = service.system()
@@ -310,7 +310,7 @@ class TestObserverService:
             "conflicts": [],
         }
 
-        mock_config = MagicMock(spec=["vlm"])  # Only allow vlm attribute
+        mock_config = MagicMock(spec=["vlm", "embedding", "rerank"], embedding=None, rerank=None)
         mock_config.vlm.get_vlm_instance.return_value = MagicMock()
         service = ObserverService(vikingdb=MagicMock(), config=mock_config)
         status = service.system()
@@ -354,7 +354,7 @@ class TestObserverService:
             "conflicts": [],
         }
 
-        mock_config = MagicMock(spec=["vlm"])
+        mock_config = MagicMock(spec=["vlm", "embedding", "rerank"], embedding=None, rerank=None)
         mock_config.vlm.get_vlm_instance.return_value = MagicMock()
         service = ObserverService(vikingdb=MagicMock(), config=mock_config)
         status = service.system()
@@ -415,7 +415,7 @@ class TestObserverService:
             mock_observer.get_status_table.return_value = "OK"
             mock_cls.return_value = mock_observer
 
-        mock_config = MagicMock(spec=["vlm"])  # Only allow vlm attribute
+        mock_config = MagicMock(spec=["vlm", "embedding", "rerank"], embedding=None, rerank=None)
         mock_config.vlm.get_vlm_instance.return_value = MagicMock()
         service = ObserverService(vikingdb=MagicMock(), config=mock_config)
         assert service.is_healthy() is False

@@ -187,15 +187,15 @@ async def test_overview_content(client_with_resource):
     assert body["status"] == "ok"
 
 
-async def test_abstract_file_uri_returns_failed_precondition(client_with_resource):
+async def test_abstract_file_uri_falls_back_to_parent_directory(client_with_resource):
     client, uri = client_with_resource
     file_uri = await _first_child_uri(client, uri)
     resp = await client.get("/api/v1/content/abstract", params={"uri": file_uri})
-    assert resp.status_code == 412
-    body = resp.json()
-    assert body["status"] == "error"
-    assert body["error"]["code"] == "FAILED_PRECONDITION"
-    assert "not a directory" in body["error"]["message"]
+    assert resp.status_code == 200, resp.text
+
+    parent_resp = await client.get("/api/v1/content/abstract", params={"uri": uri})
+    assert parent_resp.status_code == 200, parent_resp.text
+    assert resp.json()["result"] == parent_resp.json()["result"]
 
 
 async def test_overview_missing_uri_returns_not_found(client):

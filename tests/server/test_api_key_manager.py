@@ -302,14 +302,21 @@ async def test_refresh_account_users_from_store_is_atomic_on_invalid_data(
     users_path = USERS_PATH_TEMPLATE.format(account_id=acct)
     original_read_json = manager._legacy._read_json
 
-    async def _read_invalid_role(path: str):
+    async def _read_malformed_users(path: str):
         if path == users_path:
-            return {"users": {"mallory": {"role": "invalid", "key": "bad-key"}}}
+            # Roles are free-form strings now, so corrupt the entry shape instead:
+            # a valid user followed by a malformed one must not be half-applied.
+            return {
+                "users": {
+                    "bob": {"role": "user", "key": "bob-key-0123456789"},
+                    "mallory": "corrupt-entry",
+                }
+            }
         return await original_read_json(path)
 
-    monkeypatch.setattr(manager._legacy, "_read_json", _read_invalid_role)
+    monkeypatch.setattr(manager._legacy, "_read_json", _read_malformed_users)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(AttributeError):
         await manager.refresh_account_users_from_store(acct)
 
     assert manager._legacy._accounts[acct].users is cached_users

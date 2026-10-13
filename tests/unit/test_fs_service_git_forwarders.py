@@ -137,6 +137,7 @@ async def test_diff_forwards_validated_path_and_refs(svc, viking_fs_mock):
         path="viking://resources/a.md",
         from_ref=None,
         to_ref="main",
+        raw=True,
         ctx=ctx,
     )
     assert out["change_type"] == "added"
@@ -171,10 +172,11 @@ async def test_log_with_overrides(svc, viking_fs_mock):
 async def test_log_empty_paths_is_unfiltered(svc, viking_fs_mock):
     ctx = _ctx()
     await svc.log(ctx=ctx, branch="dev", limit=5, paths=[])
+    # Forwarded as-is; VikingFS.log treats an empty path list as unfiltered.
     viking_fs_mock.log.assert_awaited_once_with(
         branch="dev",
         limit=5,
-        paths=None,
+        paths=[],
         ctx=ctx,
     )
 

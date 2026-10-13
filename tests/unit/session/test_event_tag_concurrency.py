@@ -40,6 +40,11 @@ class _MetaVikingFS:
         del uri, ctx
         return "/sessions/session-1"
 
+    async def exists(self, uri, ctx=None):
+        del ctx
+        prefix = f"{uri.rstrip('/')}/"
+        return uri in self.files or any(path.startswith(prefix) for path in self.files)
+
     async def read_file(self, uri, ctx=None):
         del ctx
         if uri not in self.files:

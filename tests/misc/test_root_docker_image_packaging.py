@@ -46,13 +46,15 @@ def test_root_dockerfile_does_not_bake_zero_openviking_version_by_default():
     assert "OPENVIKING_VERSION build arg is required" in dockerfile
 
 
-def test_openviking_package_includes_console_static_assets():
+def test_openviking_package_includes_web_static_assets():
     pyproject = _read_text("pyproject.toml")
     setup_py = _read_text("setup.py")
+    openviking_package_data = pyproject.split("vikingbot = [", maxsplit=1)[0]
 
-    assert '"console/static/**/*"' in pyproject
-    assert '"console/static/**/*"' in pyproject.split("vikingbot = [", maxsplit=1)[0]
-    assert '"console/static/**/*"' in setup_py
+    # The console UI was replaced by Web Studio; both asset trees ship in the wheel.
+    for pattern in ('"server/static/**/*"', '"web_studio/dist/**/*"'):
+        assert pattern in openviking_package_data
+        assert pattern in setup_py
 
 
 def test_build_workflow_invokes_maturin_via_python_module():
@@ -78,11 +80,12 @@ def test_root_build_system_includes_maturin_for_isolated_builds():
     assert '"maturin",' in setup_py
     assert '"build",' in setup_py
     assert '"--release",' in setup_py
-    assert '"--features",' in setup_py
-    assert '"s3",' in setup_py
     assert '"--out",' in setup_py
     assert "tmpdir," in setup_py
     assert 'shutil.which("maturin")' not in setup_py
+    # S3 support is a default feature of the binding, so no --features flag is needed.
+    cargo_toml = _read_text("crates/ragfs-python/Cargo.toml")
+    assert 'default = ["extension-module", "s3"]' in cargo_toml
 
 
 def test_root_build_system_honors_ci_compiler_overrides_and_requires_ragfs_for_wheels():

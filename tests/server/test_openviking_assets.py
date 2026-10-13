@@ -202,7 +202,7 @@ def test_single_file_manifest_selects_subset():
     [
         ("'   '", "must be a non-empty string"),
         ("viking://user/skills/repo", "must target resource content"),
-        ("https://example.com/repo", "unsupported URI scheme"),
+        ("https://example.com/repo", "URI must start with 'viking://'"),
     ],
 )
 def test_resolver_rejects_invalid_asset_target(to: str, message: str):

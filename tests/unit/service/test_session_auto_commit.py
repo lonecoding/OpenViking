@@ -482,7 +482,8 @@ async def test_scheduler_scans_agfs_paths_directly_without_account_user_indices(
         ("/local/acct_a/user", "acct_a"),
         ("/local/acct_a/user/user_b/sessions", "acct_a"),
     ]
-    assert service.viking_fs.read_calls == [
+    # Meta files in a batch are read concurrently, so the read order is not fixed.
+    assert sorted(service.viking_fs.read_calls) == [
         "/local/acct_a/user/user_b/sessions/session_due/.meta.json",
         "/local/acct_a/user/user_b/sessions/session_skip/.meta.json",
     ]

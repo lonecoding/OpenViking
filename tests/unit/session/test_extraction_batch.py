@@ -83,10 +83,14 @@ def test_phase2_batches_keep_a_turn_together_when_it_fits():
 
 
 @pytest.mark.asyncio
-async def test_working_memory_batches_carry_the_previous_summary_forward():
+async def test_working_memory_batches_carry_the_previous_summary_forward(monkeypatch):
     session = Session(viking_fs=None)
     messages = [_message("u1"), _message("u2"), _message("u3")]
     calls = []
+    # Batching only applies when a VLM is available (see the fallback tests below).
+    vlm = type("VLM", (), {"is_available": lambda self: True})()
+    config = type("Config", (), {"vlm": vlm})()
+    monkeypatch.setattr("openviking.session.session.get_openviking_config", lambda: config)
 
     async def generate(batch, latest_archive_overview="", checkpoint_requests=None):
         calls.append(

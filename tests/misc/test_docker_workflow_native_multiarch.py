@@ -20,17 +20,15 @@ def test_build_docker_workflow_uses_native_parallel_multiarch_jobs():
     assert "platforms: linux/amd64,linux/arm64" not in workflow
 
 
-def test_release_docker_workflow_uses_native_parallel_multiarch_jobs():
+def test_release_workflow_delegates_docker_build_to_build_workflow():
+    # Images are built by build-docker-image.yml on the tag push; the release
+    # workflow only waits for that run and verifies the published tags.
     workflow = _read_text(".github/workflows/release.yml")
 
+    assert "docker/build-push-action" not in workflow
     assert "docker/setup-qemu-action" not in workflow
-    assert "ubuntu-24.04-arm" in workflow
-    assert "docker buildx imagetools create" in workflow
-    assert "push-by-digest=true" in workflow
-    assert "name-canonical=true" in workflow
-    assert '"${tag}-amd64"' not in workflow
-    assert '"${tag}-arm64"' not in workflow
-    assert "platforms: linux/amd64,linux/arm64" not in workflow
+    assert "gh run list --workflow build-docker-image.yml" in workflow
+    assert "docker buildx imagetools inspect" in workflow
 
 
 def test_build_docker_workflow_uses_manual_input_version_for_dispatch_tags():
@@ -63,7 +61,6 @@ def test_docker_workflows_normalize_image_names_to_lowercase():
     assert "tr '[:upper:]' '[:lower:]'" in build_workflow
     assert "steps.image-name.outputs.image" in build_workflow
     assert "tr '[:upper:]' '[:lower:]'" in release_workflow
-    assert "steps.image-name.outputs.image" in release_workflow
 
 
 def test_build_docker_workflow_tracks_registry_specific_digests_for_manifests():
@@ -83,14 +80,3 @@ def test_build_docker_workflow_tracks_registry_specific_digests_for_manifests():
         'dockerhub_image_refs+=("docker.io/${{ secrets.DOCKERHUB_USERNAME }}/openviking@${digest}")'
         in workflow
     )
-
-
-def test_release_workflow_tracks_registry_specific_digests_for_manifests():
-    workflow = _read_text(".github/workflows/release.yml")
-
-    assert "docker-digests-ghcr-${{ matrix.arch }}" in workflow
-    assert "docker-digests-dockerhub-${{ matrix.arch }}" in workflow
-    assert 'ghcr_digest="${{ steps.push-ghcr.outputs.digest }}"' in workflow
-    assert 'dockerhub_digest="${{ steps.push-dockerhub.outputs.digest }}"' in workflow
-    assert "pattern: docker-digests-ghcr-*" in workflow
-    assert "pattern: docker-digests-dockerhub-*" in workflow
