@@ -52,9 +52,8 @@ async def test_stats_session_internal_error_returns_500(client: httpx.AsyncClien
 
 
 async def test_debug_vector_scroll_no_vikingdb_returns_503(client: httpx.AsyncClient):
-    with patch(
-        "openviking.server.dependencies.get_service"
-    ) as fake_get_service:
+    # The router binds get_service at import time; patch it where it is looked up.
+    with patch("openviking.server.routers.debug.get_service") as fake_get_service:
         service = fake_get_service.return_value
         service.vikingdb_manager = None
         resp = await client.get("/api/v1/debug/vector/scroll")
@@ -62,9 +61,8 @@ async def test_debug_vector_scroll_no_vikingdb_returns_503(client: httpx.AsyncCl
 
 
 async def test_debug_vector_count_no_vikingdb_returns_503(client: httpx.AsyncClient):
-    with patch(
-        "openviking.server.dependencies.get_service"
-    ) as fake_get_service:
+    # The router binds get_service at import time; patch it where it is looked up.
+    with patch("openviking.server.routers.debug.get_service") as fake_get_service:
         service = fake_get_service.return_value
         service.vikingdb_manager = None
         resp = await client.get("/api/v1/debug/vector/count")

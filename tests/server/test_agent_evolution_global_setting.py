@@ -86,6 +86,20 @@ def fake_viking_fs():
     return SimpleNamespace(agfs=_FakeAGFS(), acl_manager=_FakeAclManager())
 
 
+class _FakeAPIKeyManager:
+    def __init__(self, accounts):
+        self._accounts = [{"account_id": account_id} for account_id in accounts]
+
+    async def refresh_accounts_from_store(self):
+        return None
+
+    async def refresh_account_users_from_store(self, account_id):
+        del account_id
+
+    def get_accounts(self):
+        return list(self._accounts)
+
+
 @pytest_asyncio.fixture
 async def settings_http(fake_viking_fs, monkeypatch):
     monkeypatch.setattr(
@@ -97,6 +111,8 @@ async def settings_http(fake_viking_fs, monkeypatch):
     app = create_app(config=ServerConfig(), service=service)
     set_service(service)
     app.state.auth_plugin = DevAuthPlugin()
+    # Admin routes only serve authenticated deployments (a configured key manager).
+    app.state.api_key_manager = _FakeAPIKeyManager(accounts=["default"])
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         yield client, service

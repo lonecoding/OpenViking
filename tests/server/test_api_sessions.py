@@ -21,6 +21,7 @@ from openviking.server.config import (
 from openviking.server.dependencies import set_service
 from openviking.server.identity import RequestContext, Role
 from openviking.server.routers import sessions as sessions_router
+from openviking.session.auto_commit_policy import MAX_PENDING_TOKEN_THRESHOLD, AutoCommitPolicy
 from openviking.session.session import Session
 from openviking_cli.session.user_id import UserIdentifier
 from openviking_cli.utils.config import OPENVIKING_CONFIG_ENV
@@ -31,6 +32,8 @@ from tests.utils.mock_agfs import MockLocalAGFS
 DEFAULT_USER = UserIdentifier.the_default_user()
 TEST_ROOT_KEY = "root-secret-key-for-session-tests"
 _UNSET = object()
+
+_DEFAULT_AUTO_COMMIT_POLICY = AutoCommitPolicy.default().to_dict()
 
 
 def _message_request(
@@ -169,7 +172,12 @@ async def test_get_session(client: httpx.AsyncClient):
     assert body["result"]["uri"] == session_uri
 
 
-async def test_legacy_session_uri_alias_reads_current_user_session(client: httpx.AsyncClient):
+async def test_legacy_session_uri_alias_requires_canonical_uri_for_root(
+    client: httpx.AsyncClient,
+):
+    # The legacy ``viking://session/...`` alias is only expanded for USER/ADMIN
+    # callers (see test_namespace_uri_classification). The dev-mode client is ROOT,
+    # which does not identify a single user, so it must use the canonical URI.
     session_id = "legacy-alias-read"
     await client.post("/api/v1/sessions", json={"session_id": session_id})
     await client.post(
@@ -177,12 +185,18 @@ async def test_legacy_session_uri_alias_reads_current_user_session(client: httpx
         json=_message_request("user", content="legacy alias message"),
     )
 
-    resp = await client.get(
+    alias_resp = await client.get(
         "/api/v1/content/read",
         params={"uri": f"viking://session/{session_id}/messages.jsonl"},
     )
+    assert alias_resp.status_code == 400
+    assert alias_resp.json()["error"]["code"] == "INVALID_URI"
 
-    assert resp.status_code == 200
+    resp = await client.get(
+        "/api/v1/content/read",
+        params={"uri": f"viking://user/default/sessions/{session_id}/messages.jsonl"},
+    )
+    assert resp.status_code == 200, resp.text
     assert "legacy alias message" in resp.json()["result"]
 
 
@@ -643,13 +657,7 @@ async def test_create_session_uses_default_policy_when_server_default_enabled(
 
     resp = await client.post("/api/v1/sessions", json={})
     assert resp.status_code == 200
-    assert resp.json()["result"]["auto_commit_policy"] == {
-        "pending_token_threshold": 10000,
-        "message_count_threshold": 50,
-        "idle_timeout_seconds": 86400,
-        "keep_recent_count": 2,
-        "min_commit_interval_seconds": 0,
-    }
+    assert resp.json()["result"]["auto_commit_policy"] == _DEFAULT_AUTO_COMMIT_POLICY
 
 
 async def test_create_session_can_disable_server_default_auto_commit(
@@ -692,13 +700,7 @@ async def test_auto_created_session_uses_default_policy_when_server_default_enab
 
     session_resp = await client.get(f"/api/v1/sessions/{session_id}")
     assert session_resp.status_code == 200
-    assert session_resp.json()["result"]["auto_commit_policy"] == {
-        "pending_token_threshold": 10000,
-        "message_count_threshold": 50,
-        "idle_timeout_seconds": 86400,
-        "keep_recent_count": 2,
-        "min_commit_interval_seconds": 0,
-    }
+    assert session_resp.json()["result"]["auto_commit_policy"] == _DEFAULT_AUTO_COMMIT_POLICY
 
 
 async def test_create_session_applies_config_and_fills_defaults(client: httpx.AsyncClient):
@@ -714,11 +716,9 @@ async def test_create_session_applies_config_and_fills_defaults(client: httpx.As
     assert resp.status_code == 200
     result = resp.json()["result"]
     assert result["auto_commit_policy"] == {
+        **_DEFAULT_AUTO_COMMIT_POLICY,
         "pending_token_threshold": 8000,
-        "message_count_threshold": 50,
-        "idle_timeout_seconds": 86400,
         "keep_recent_count": 10,
-        "min_commit_interval_seconds": 0,
     }
 
     session_resp = await client.get(f"/api/v1/sessions/{result['session_id']}")
@@ -734,7 +734,7 @@ async def test_create_session_clamps_config_above_bounds(client: httpx.AsyncClie
     )
     assert resp.status_code == 200
     policy = resp.json()["result"]["auto_commit_policy"]
-    assert policy["pending_token_threshold"] == 50000
+    assert policy["pending_token_threshold"] == MAX_PENDING_TOKEN_THRESHOLD
 
 
 async def test_get_session_returns_effective_config(client: httpx.AsyncClient):
