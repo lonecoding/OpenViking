@@ -81,17 +81,16 @@ async def test_viking_ingest_uses_message_peer_id(monkeypatch):
         async def initialize(self):
             return None
 
-        async def create_session(self, memory_policy=None):
-            calls.append(("create_session", memory_policy))
+        async def create_session(self, session_id=None, options=None):
+            calls.append(("create_session", (options or {}).get("memory_policy")))
             return {"session_id": "sess-1"}
 
         async def get_session(self, session_id):
             calls.append(("get_session", session_id))
             return {"commit_count": 0}
 
-        async def add_message(
-            self, session_id=None, role=None, parts=None, created_at=None, peer_id=None
-        ):
+        async def add_message(self, session_id=None, role=None, parts=None, options=None):
+            options = options or {}
             calls.append(
                 (
                     "add_message",
@@ -99,8 +98,8 @@ async def test_viking_ingest_uses_message_peer_id(monkeypatch):
                         "session_id": session_id,
                         "role": role,
                         "parts": parts,
-                        "created_at": created_at,
-                        "peer_id": peer_id,
+                        "created_at": options.get("created_at"),
+                        "peer_id": options.get("peer_id"),
                     },
                 )
             )

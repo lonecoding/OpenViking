@@ -66,23 +66,27 @@ def teardown_function() -> None:
     OpenVikingConfigSingleton.reset_instance()
 
 
-def test_profile_memory_template_includes_stable_identity_work_style_and_preferences():
+def test_profile_memory_template_keeps_only_durable_current_state():
     template_path = PromptManager._get_bundled_templates_dir() / "memory" / "profile.yaml"
     schema = yaml.safe_load(template_path.read_text(encoding="utf-8"))
-    text = "\n".join(
-        [
-            schema["description"],
-            schema["fields"][0]["description"],
-        ]
+    text = " ".join(
+        "\n".join(
+            [
+                schema["description"],
+                schema["fields"][0]["description"],
+            ]
+        ).split()
     )
 
-    assert '"who the user is"' in text
-    assert "identity, work style, and preferences" in text
-    assert "profession, experience level, technical background" in text
-    assert "communication style, work habits" in text
-    assert "Do NOT include transient conversation content" in text
-    assert "Each item: self-contained" in text
-    assert "Only record objective statuses" in text
+    assert "DURABLE CURRENT STATE" in text
+    assert "Basic identity: name, nickname, age" in text
+    assert "Current education and career state" in text
+    # Transient and habitual facts are routed to other memory types.
+    assert "Route everything else away from profile" in text
+    assert "attended/tried/completed/won action -> EVENTS" in text
+    assert "work/communication style, coping method, preferred tool/workflow" in text
+    assert "-> PREFERENCES" in text
+    assert "Never infer attributes from assistant text" in text
 
 
 def test_preferences_memory_template_keeps_topic_specific_preferences():
@@ -101,7 +105,7 @@ def test_preferences_memory_template_keeps_topic_specific_preferences():
     assert "specific topic" in text
     assert "code style, communication style, tools, workflow" in text
     assert "Store different topics as separate memory files" in text
-    assert "do not mix unrelated preferences" in text
+    assert "do not mix unrelated preferences" in text.lower()
 
 
 def test_prompt_manager_prefers_env_templates_dir_over_config(tmp_path, monkeypatch):

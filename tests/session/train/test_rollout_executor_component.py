@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +20,22 @@ from openviking.session.train import (
     RubricCriterion,
     SingleTurnLLMRolloutExecutor,
     default_single_turn_prompt,
+)
+
+
+def _can_import(module: str) -> bool:
+    try:
+        importlib.import_module(module)
+    except ImportError:
+        return False
+    return True
+
+
+# tau2-bench and the vikingbot runtime (``bot`` extra) are benchmark-only
+# dependencies that are not part of the ``test`` extra.
+requires_tau2 = pytest.mark.skipif(not _can_import("tau2"), reason="tau2-bench is not installed")
+requires_vikingbot = pytest.mark.skipif(
+    not _can_import("vikingbot.cli.commands"), reason="vikingbot runtime is not installed"
 )
 
 
@@ -239,6 +256,7 @@ def test_tau2_rollout_messages_omit_empty_final_after_done():
     assert rollout_messages[-1].id == "tau2-reward"
 
 
+@requires_tau2
 def test_tau2_reward_info_is_json_safe_in_rollout_messages_and_evaluation():
     import json
 
@@ -340,6 +358,7 @@ def test_tau2_litellm_generate_retry_patch_does_not_retry_non_rate_limit(monkeyp
     assert calls["count"] == 1
 
 
+@requires_tau2
 def test_tau2_native_env_reward_handles_required_id_and_tool_call_ids(monkeypatch):
     import benchmark.tau2.common.tau2_env.tau2_environment as tau2_environment
     from benchmark.tau2.common.tau2_env.tau2_environment import Tau2BenchEnv
@@ -356,6 +375,7 @@ def test_tau2_native_env_reward_handles_required_id_and_tool_call_ids(monkeypatc
     assert evaluation.reward == 1.0
 
 
+@requires_tau2
 def test_tau2_native_env_records_communication_as_assistant_text(monkeypatch):
     import benchmark.tau2.common.tau2_env.tau2_environment as tau2_environment
     from benchmark.tau2.common.tau2_env.tau2_environment import Tau2BenchEnv
@@ -371,6 +391,7 @@ def test_tau2_native_env_records_communication_as_assistant_text(monkeypatch):
     assert evaluation.communicate_checks[0].met is True
 
 
+@requires_tau2
 def test_tau2_final_answer_is_appended_for_native_evaluation(monkeypatch):
     import benchmark.tau2.common.tau2_env.tau2_environment as tau2_environment
     from benchmark.tau2.common.tau2_env.tau2_environment import Tau2BenchEnv
@@ -387,6 +408,7 @@ def test_tau2_final_answer_is_appended_for_native_evaluation(monkeypatch):
     assert evaluation.communicate_checks[0].met is True
 
 
+@requires_vikingbot
 def test_tau2_configure_tools_removes_only_openviking_tools():
     from benchmark.tau2.train.rollout_executor import _configure_tools
 
@@ -461,6 +483,7 @@ def test_tau2_rollout_backend_factory_defaults_to_native():
     assert executor.show_progress is False
 
 
+@requires_tau2
 def test_tau2_native_rollout_resolves_non_empty_llms(monkeypatch):
     from benchmark.tau2.train.rollout_executor_native import (
         NativeTau2RolloutExecutor,
@@ -484,6 +507,7 @@ def test_tau2_native_rollout_resolves_non_empty_llms(monkeypatch):
     assert user_args["top_p"] == 0.9
 
 
+@requires_tau2
 def test_tau2_native_rollout_uses_env_llm_when_options_omit_model(monkeypatch):
     from benchmark.tau2.train.rollout_executor_native import (
         NativeTau2RolloutExecutor,
@@ -591,6 +615,7 @@ async def test_tau2_vikingbot_rollout_runs_on_current_event_loop():
     assert observed["thread"] == expected_thread
 
 
+@requires_vikingbot
 @pytest.mark.asyncio
 async def test_tau2_prepare_experience_loader_skill_writes_required_skill(tmp_path):
     import benchmark.tau2.train.rollout_executor_vikingbot as module
@@ -662,6 +687,7 @@ async def test_tau2_experience_loader_skill_is_required_with_relative_read_path(
     assert f"<location>{tmp_path}" not in system_prompt
 
 
+@requires_vikingbot
 @pytest.mark.asyncio
 async def test_tau2_vikingbot_blocking_setup_and_reward_are_offloaded(monkeypatch):
     import benchmark.tau2.train.rollout_executor_vikingbot as module
@@ -752,6 +778,7 @@ async def test_tau2_vikingbot_blocking_setup_and_reward_are_offloaded(monkeypatc
     assert call_threads["run_agent"] == event_loop_thread
 
 
+@requires_vikingbot
 @pytest.mark.asyncio
 async def test_tau2_run_agent_force_loads_experience_loader_skill_before_task_actions(monkeypatch):
     from vikingbot.providers.base import LLMResponse, ToolCallRequest

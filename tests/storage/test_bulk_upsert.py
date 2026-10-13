@@ -186,6 +186,7 @@ async def test_single_account_backend_upsert_many_rejects_invalid_adapter_result
 @pytest.mark.asyncio
 async def test_viking_vector_index_backend_upsert_many_delegates_once():
     backend = object.__new__(VikingVectorIndexBackend)
+    backend.acl_manager = None
     ctx = SimpleNamespace(account_id="acc1")
     records = [{"id": "rec-1"}, {"id": "rec-2"}]
     calls = []

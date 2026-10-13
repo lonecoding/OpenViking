@@ -170,10 +170,11 @@ async def gemini_ov_service(tmp_path):
 
 @pytest.fixture(scope="session")
 def temp_dir():
-    """Create temp directory for the whole test session."""
-    shutil.rmtree(TEST_TMP_DIR, ignore_errors=True)
-    TEST_TMP_DIR.mkdir(parents=True, exist_ok=True)
-    yield TEST_TMP_DIR
+    """Create temp directory for the whole test session (one per xdist worker)."""
+    session_dir = TEST_TMP_DIR / os.environ.get("PYTEST_XDIST_WORKER", "main")
+    shutil.rmtree(session_dir, ignore_errors=True)
+    session_dir.mkdir(parents=True, exist_ok=True)
+    yield session_dir
 
 
 @pytest.fixture(scope="session")

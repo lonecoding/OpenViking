@@ -13,6 +13,7 @@ import uuid
 
 import pytest
 
+from openviking.storage.errors import LockAcquisitionError
 from openviking.storage.viking_fs import init_viking_fs
 from openviking.utils.resource_processor import ResourceProcessor
 from openviking_cli.utils.config.agfs_config import AGFSConfig
@@ -200,7 +201,9 @@ class TestVikingFSBindingLocal:
         adopted = None
 
         try:
-            with pytest.raises(ValueError):
+            # Rejected either by request validation (ValueError) or by the local
+            # fast path, which checks coverage against the live lease.
+            with pytest.raises((ValueError, LockAcquisitionError)):
                 adopted = await vfs._async_agfs.pathlock_adopt(handoff)
         finally:
             if adopted is not None:
@@ -211,6 +214,9 @@ class TestVikingFSBindingLocal:
         self, viking_fs_binding_instance
     ):
         """Accept legacy durable handoffs that use handle_id instead of owner_id."""
+        from openviking.pyagfs.async_client import AsyncAGFSClient
+        from openviking.utils.agfs_utils import RagfsBindingConfig, create_agfs_client
+
         vfs = viking_fs_binding_instance
         path = f"/local/default/temp/handoff_legacy_{uuid.uuid4().hex}.txt"
         owned = await vfs._async_agfs.pathlock_acquire_exact(path)
@@ -219,16 +225,19 @@ class TestVikingFSBindingLocal:
             "handle_id": handoff["owner_id"],
             "lock_paths": handoff["lock_paths"],
         }
+        # Legacy payloads only occur across a restart: the token is still on disk
+        # but the original registry entry is gone. Model that with a second client
+        # (fresh lock registry) sharing the same backend.
+        consumer = AsyncAGFSClient(create_agfs_client(RagfsBindingConfig(agfs=AGFS_CONF)))
         adopted = None
 
         try:
-            adopted = await vfs._async_agfs.pathlock_adopt(legacy_handoff)
+            adopted = await consumer.pathlock_adopt(legacy_handoff)
             assert adopted["owner_id"] == owned["owner_id"]
             assert adopted["owned"] is True
         finally:
             if adopted is not None:
-                await vfs._async_agfs.pathlock_release(adopted)
-            await vfs._async_agfs.pathlock_release(owned)
+                await consumer.pathlock_release(adopted)
 
     @pytest.mark.parametrize(
         "requests",

@@ -54,7 +54,7 @@ class _MemoryAGFS:
         self.writes = []
         self.removed = []
 
-    def ls(self, path, ctx=None):
+    def ls(self, path, ctx=None, offset=None, limit=None, sort_by=None, sort_order="asc"):
         if path not in self.dirs:
             raise FileNotFoundError(path)
         prefix = path.rstrip("/") + "/"
@@ -65,7 +65,10 @@ class _MemoryAGFS:
             rest = candidate[len(prefix) :]
             if rest and "/" not in rest:
                 names.add(rest)
-        return [self._entry(f"{prefix}{name}") for name in sorted(names)]
+        ordered = sorted(names, reverse=sort_by is not None and sort_order == "desc")
+        start = offset or 0
+        end = None if limit is None else start + limit
+        return [self._entry(f"{prefix}{name}") for name in ordered[start:end]]
 
     def tree_directory(
         self,

@@ -24,8 +24,9 @@ def _make_viking_fs(*, enable_intent: bool) -> VikingFS:
     fs.rerank_config = None
     fs.retrieval_config = RetrievalConfig(enable_intent=enable_intent)
     fs.vector_store = MagicMock(name="vector_store")
+    fs.acl_manager = None
     fs._bound_ctx = contextvars.ContextVar("vikingfs_bound_ctx_intent_test", default=None)
-    fs._ensure_access = MagicMock()
+    fs._ensure_access = AsyncMock()
     fs._get_vector_store = MagicMock(return_value=fs.vector_store)
     fs._get_embedder = MagicMock(return_value=fs.query_embedder)
     fs._ctx_or_default = MagicMock(return_value=_ctx())

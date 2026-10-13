@@ -53,8 +53,10 @@ def test_async_http_client_loads_missing_fields_from_ovcli_config(tmp_path, monk
 
     assert client._url == "http://explicit-host:1933"
     assert client._api_key == "config-key"
-    assert client._gateway_token == "gateway-secret"
-    assert client._extra_headers["X-Gateway-Token"] == "gateway-secret"
+    # The gateway token is only bound to the URL it was configured for, and is
+    # sent on a gateway challenge rather than as a static header.
+    assert client._gateway_token is None
+    assert "X-Gateway-Token" not in client._extra_headers
     assert client._account == "config-account"
     assert client._user_id == "config-user"
     assert client._actor_peer_id == "config-actor"
@@ -422,7 +424,6 @@ async def test_async_http_client_find_does_not_send_peer_id(tmp_path, monkeypatc
                 "query": "invoice",
                 "target_uri": "viking://user/memories",
                 "limit": 10,
-                "telemetry": False,
             },
         )
     ]
@@ -475,7 +476,6 @@ async def test_async_http_client_search_does_not_send_peer_id(tmp_path, monkeypa
                 "target_uri": "viking://user/memories",
                 "session_id": "session-1",
                 "limit": 10,
-                "telemetry": False,
             },
         )
     ]
@@ -552,7 +552,7 @@ async def test_async_http_client_find_sends_context_type(tmp_path, monkeypatch):
 
     await client.find(
         "invoice",
-        context_type=[ContextType.MEMORY, ContextType.RESOURCE],
+        options={"context_type": [ContextType.MEMORY, ContextType.RESOURCE]},
     )
 
     assert http.calls == [
@@ -563,7 +563,6 @@ async def test_async_http_client_find_sends_context_type(tmp_path, monkeypatch):
                 "target_uri": "",
                 "limit": 10,
                 "context_type": ["memory", "resource"],
-                "telemetry": False,
             },
         )
     ]
@@ -581,7 +580,7 @@ async def test_async_http_client_search_sends_context_type(tmp_path, monkeypatch
 
     await client.search(
         "invoice",
-        context_type="skill",
+        options={"context_type": "skill"},
     )
 
     assert http.calls == [
@@ -592,7 +591,6 @@ async def test_async_http_client_search_sends_context_type(tmp_path, monkeypatch
                 "target_uri": "",
                 "limit": 10,
                 "context_type": "skill",
-                "telemetry": False,
             },
         )
     ]

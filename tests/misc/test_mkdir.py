@@ -24,6 +24,8 @@ def _make_viking_fs():
     fs._async_agfs.mkdir = AsyncMock(return_value=None)
     fs.query_embedder = None
     fs.vector_store = None
+    fs.acl_manager = None
+    fs._user_deletion_guard = None
     fs._uri_prefix = "viking://"
     fs._bound_ctx = contextvars.ContextVar("vikingfs_bound_ctx", default=None)
     return fs

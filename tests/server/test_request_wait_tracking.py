@@ -47,13 +47,23 @@ class _FakeVikingFS:
         self._file_uri = file_uri
         self._root_uri = root_uri
         self.content = {file_uri: "original"}
+        async def _pathlock_acquire_exact(lock_path):
+            del lock_path
+            return {"lease_ref": "lock-1"}
+
+        async def _pathlock_release(lease):
+            del lease
+
         self._async_agfs = SimpleNamespace(
-            pathlock_acquire_exact=lambda lock_path: SimpleNamespace(id="lock-1"),
-            pathlock_release=lambda lease: None,
+            pathlock_acquire_exact=_pathlock_acquire_exact,
+            pathlock_release=_pathlock_release,
         )
 
-    async def stat(self, uri: str, ctx=None):
-        del ctx
+    async def _ensure_access(self, uri: str, ctx=None, *, action=None):
+        del uri, ctx, action
+
+    async def stat(self, uri: str, ctx=None, **kwargs):
+        del ctx, kwargs
         if uri == self._file_uri:
             return {"isDir": False}
         if uri == self._root_uri:

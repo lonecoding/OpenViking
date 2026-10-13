@@ -3,8 +3,9 @@
 """Tests for the ollama embedding factory in EmbeddingConfig._create_embedder.
 
 Regression tests for two bugs fixed in the ollama factory lambda:
-  1. max_tokens was not forwarded to OpenAIDenseEmbedder (so user-configured
-     chunking thresholds were silently ignored for Ollama).
+  1. The input token limit was not forwarded to OpenAIDenseEmbedder (so
+     user-configured thresholds were silently ignored for Ollama). The limit
+     now lives on ``EmbeddingConfig.max_input_tokens``.
   2. The api_key placeholder was "ollama" instead of "no-key", inconsistent
      with the openai factory and the placeholder used inside OpenAIDenseEmbedder.
 """
@@ -32,39 +33,39 @@ def _make_ollama_cfg(**kwargs) -> EmbeddingModelConfig:
 
 
 @patch("openai.OpenAI")
-class TestOllamaFactoryMaxTokens:
-    """max_tokens must be forwarded from config to OpenAIDenseEmbedder."""
+class TestOllamaFactoryMaxInputTokens:
+    """EmbeddingConfig.max_input_tokens must be forwarded to OpenAIDenseEmbedder."""
 
-    def test_custom_max_tokens_is_forwarded(self, mock_openai_class):
-        """When max_tokens=512, the created embedder should report max_tokens=512."""
+    def test_custom_max_input_tokens_is_forwarded(self, mock_openai_class):
+        """When max_input_tokens=512, the created embedder should report 512."""
         mock_client = MagicMock()
         mock_client.embeddings.create.return_value = MagicMock(
             data=[MagicMock(embedding=[0.1] * 8)], usage=None
         )
         mock_openai_class.return_value = mock_client
 
-        cfg = _make_ollama_cfg(max_tokens=512)
-        embedder = EmbeddingConfig(dense=cfg)._create_embedder("ollama", "dense", cfg)
+        cfg = _make_ollama_cfg()
+        embedder = EmbeddingConfig(dense=cfg, max_input_tokens=512)._create_embedder(
+            "ollama", "dense", cfg
+        )
 
-        assert embedder.max_tokens == 512
+        assert embedder.max_input_tokens == 512
 
-    def test_none_max_tokens_uses_default(self, mock_openai_class):
-        """When max_tokens is not set (None), the embedder should use its default (8000)."""
+    def test_unset_max_input_tokens_uses_default(self, mock_openai_class):
+        """When max_input_tokens is not set, the embedder uses the config default (4096)."""
         mock_client = MagicMock()
         mock_client.embeddings.create.return_value = MagicMock(
             data=[MagicMock(embedding=[0.1] * 8)], usage=None
         )
         mock_openai_class.return_value = mock_client
 
-        cfg = _make_ollama_cfg()  # max_tokens not set -> None
-        assert cfg.max_tokens is None
-
+        cfg = _make_ollama_cfg()
         embedder = EmbeddingConfig(dense=cfg)._create_embedder("ollama", "dense", cfg)
 
-        assert embedder.max_tokens == 8000  # class-level default
+        assert embedder.max_input_tokens == 4096
 
-    def test_openai_factory_max_tokens_also_forwarded(self, mock_openai_class):
-        """Sanity: the openai factory also forwards max_tokens (parity check)."""
+    def test_openai_factory_max_input_tokens_also_forwarded(self, mock_openai_class):
+        """Sanity: the openai factory also forwards max_input_tokens (parity check)."""
         mock_client = MagicMock()
         mock_client.embeddings.create.return_value = MagicMock(
             data=[MagicMock(embedding=[0.1] * 8)], usage=None
@@ -76,11 +77,12 @@ class TestOllamaFactoryMaxTokens:
             model="text-embedding-3-small",
             api_key="sk-test",
             dimension=1536,
-            max_tokens=4096,
         )
-        embedder = EmbeddingConfig(dense=cfg)._create_embedder("openai", "dense", cfg)
+        embedder = EmbeddingConfig(dense=cfg, max_input_tokens=2048)._create_embedder(
+            "openai", "dense", cfg
+        )
 
-        assert embedder.max_tokens == 4096
+        assert embedder.max_input_tokens == 2048
 
 
 @patch("openai.OpenAI")

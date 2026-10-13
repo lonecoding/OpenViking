@@ -56,10 +56,20 @@ def _case() -> Case:
     )
 
 
+class DummyPathLock:
+    async def pathlock_acquire_tree(self, path: str, timeout_secs=None):
+        del timeout_secs
+        return {"lease_ref": f"lease:{path}"}
+
+    async def pathlock_release(self, lease):
+        del lease
+
+
 class DummyVikingFS:
     def __init__(self):
         self.reloads = 0
         self.version = 1
+        self._async_agfs = DummyPathLock()
 
     async def ls(self, uri: str, output: str = "original", ctx=None):
         del output, ctx

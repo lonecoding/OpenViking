@@ -86,6 +86,9 @@ class _FakeVikingFS:
     def bind_request_context(self, ctx):
         return _CtxMgr()
 
+    async def _ensure_access(self, uri, ctx=None, *, action=None):
+        return None
+
     async def exists(self, uri, ctx=None):
         self.exists_calls.append(uri)
         if self._existing_uris:

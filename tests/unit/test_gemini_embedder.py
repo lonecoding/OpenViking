@@ -9,6 +9,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+# The Gemini embedder needs the optional ``gemini`` extra (google-genai).
+pytest.importorskip("google.genai")
+
 
 def _make_mock_embedding(values):
     emb = MagicMock()

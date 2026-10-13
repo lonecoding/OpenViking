@@ -81,10 +81,13 @@ class TestIsPidAlive:
         current_pid = os.getpid()
         assert _is_pid_alive(current_pid) is True
 
-    def test_pid_1_is_alive(self):
-        """Test that PID 1 (init) is typically alive."""
-        # PID 1 is usually init process on Linux
-        assert _is_pid_alive(1) is True
+    @pytest.mark.skipif(
+        not sys.platform.startswith("linux"), reason="cmdline verification is Linux-only"
+    )
+    def test_live_non_openviking_pid_is_not_alive_on_linux(self):
+        """A live PID whose cmdline is not OpenViking is treated as recycled (#1088)."""
+        # PID 1 is the init process (or container entrypoint), never OpenViking.
+        assert _is_pid_alive(1) is False
 
     def test_nonexistent_pid_not_alive(self):
         """Test that nonexistent PID is not alive."""
@@ -155,6 +158,16 @@ class TestIsPidAlive:
             _is_pid_alive(12345)
 
 
+@pytest.fixture
+def pid_1_is_live_openviking(monkeypatch):
+    """Pretend PID 1 is a live OpenViking process holding the lock.
+
+    On Linux, _is_pid_alive verifies /proc/<pid>/cmdline, so the real PID 1
+    (init) is reported as a recycled PID and the lock would be reclaimed.
+    """
+    monkeypatch.setattr(process_lock_module, "_is_pid_alive", lambda pid: pid == 1)
+
+
 class TestAcquireDataDirLock:
     """Test acquire_data_dir_lock function."""
 
@@ -190,7 +203,7 @@ class TestAcquireDataDirLock:
         lock_path = acquire_data_dir_lock(str(tmp_path))
         assert lock_path == str(tmp_path / LOCK_FILENAME)
 
-    def test_acquire_with_live_process_raises(self, tmp_path: Path):
+    def test_acquire_with_live_process_raises(self, tmp_path: Path, pid_1_is_live_openviking):
         """Test acquiring lock with live process raises DataDirectoryLocked."""
         # Use PID 1 (init) which is typically alive
         (tmp_path / LOCK_FILENAME).write_text("1")
@@ -223,7 +236,7 @@ class TestAcquireDataDirLock:
 
         assert not (workspace / LOCK_FILENAME).exists()
 
-    def test_error_message_suggests_http_server(self, tmp_path: Path):
+    def test_error_message_suggests_http_server(self, tmp_path: Path, pid_1_is_live_openviking):
         """Test error message suggests using one HTTP server."""
         (tmp_path / LOCK_FILENAME).write_text("1")
 
@@ -234,7 +247,7 @@ class TestAcquireDataDirLock:
         assert "OpenViking server" in error_msg
         assert "connect clients over HTTP" in error_msg
 
-    def test_error_message_shows_pid(self, tmp_path: Path):
+    def test_error_message_shows_pid(self, tmp_path: Path, pid_1_is_live_openviking):
         """Test error message shows conflicting PID."""
         (tmp_path / LOCK_FILENAME).write_text("1")
 
@@ -244,7 +257,7 @@ class TestAcquireDataDirLock:
         error_msg = str(exc_info.value)
         assert "PID 1" in error_msg
 
-    def test_error_message_shows_directory(self, tmp_path: Path):
+    def test_error_message_shows_directory(self, tmp_path: Path, pid_1_is_live_openviking):
         """Test error message shows directory path."""
         (tmp_path / LOCK_FILENAME).write_text("1")
 

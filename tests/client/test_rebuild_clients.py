@@ -143,6 +143,7 @@ async def test_async_http_client_reindex_posts_content_reindex():
             "mode": "prune_orphans",
             "wait": False,
             "dry_run": True,
+            "recursive": True,
         },
     )
     assert mock_handle.called
@@ -169,10 +170,12 @@ def test_sync_http_client_reindex_forwards_to_async_client():
     assert result == {"status": "accepted"}
     assert mock_run.called
     mock_reindex.assert_called_once_with(
-        uri="viking://resources/demo",
+        "viking://resources/demo",
         mode="prune_orphans",
         wait=False,
         dry_run=True,
+        recursive=True,
+        options=None,
     )
 
 
@@ -217,11 +220,12 @@ def test_sync_http_client_reindex_forwards_non_recursive_flag():
             )
 
     mock_reindex.assert_called_once_with(
-        uri="viking://resources/demo",
+        "viking://resources/demo",
         mode="semantic_and_vectors",
         wait=True,
         dry_run=False,
         recursive=False,
+        options=None,
     )
 
 

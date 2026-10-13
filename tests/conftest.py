@@ -4,9 +4,13 @@
 """Global test fixtures"""
 
 import asyncio
+import json
+import os
 import shutil
+import tempfile
+import uuid
 from pathlib import Path
-from typing import AsyncGenerator, Generator
+from typing import AsyncGenerator, Generator, Optional
 
 import pytest
 import pytest_asyncio
@@ -17,6 +21,7 @@ from openviking.service.core import OpenVikingService
 from openviking.service.task_tracker import set_task_tracker
 from openviking.storage import viking_fs as viking_fs_module
 from openviking_cli.session.user_id import UserIdentifier
+from openviking_cli.utils.config.consts import OPENVIKING_CONFIG_ENV
 from openviking_cli.utils.config.embedding_config import EmbeddingConfig
 from openviking_cli.utils.config.open_viking_config import OpenVikingConfigSingleton
 from tests.utils.mock_agfs import MockLocalAGFS
@@ -85,6 +90,45 @@ _patch_agfs_grep_if_missing()
 PROJECT_ROOT = Path(__file__).parent.parent
 TEST_TMP_DIR = PROJECT_ROOT / "test_data" / "tmp"
 
+# Minimal offline config used when OPENVIKING_CONFIG_FILE is not set, so the
+# suite never depends on (or touches) a developer's ~/.openviking/ov.conf.
+_DEFAULT_TEST_OV_CONF = {
+    "storage": {
+        "agfs": {"backend": "local"},
+        "vectordb": {"backend": "local"},
+    },
+    "embedding": {
+        "dense": {
+            "provider": "openai",
+            "model": "test-embedder",
+            "api_key": "test-key",
+            "dimension": 1024,
+        }
+    },
+}
+_default_test_conf_dir: Optional[str] = None
+
+
+def pytest_configure(config):
+    global _default_test_conf_dir
+    if os.environ.get(OPENVIKING_CONFIG_ENV):
+        return
+    _default_test_conf_dir = tempfile.mkdtemp(prefix="ov-test-conf-")
+    conf = dict(_DEFAULT_TEST_OV_CONF)
+    conf["storage"] = {
+        **_DEFAULT_TEST_OV_CONF["storage"],
+        "workspace": str(Path(_default_test_conf_dir) / "workspace"),
+    }
+    conf_path = Path(_default_test_conf_dir) / "ov.conf"
+    conf_path.write_text(json.dumps(conf), encoding="utf-8")
+    os.environ[OPENVIKING_CONFIG_ENV] = str(conf_path)
+
+
+def pytest_unconfigure(config):
+    if _default_test_conf_dir is not None:
+        os.environ.pop(OPENVIKING_CONFIG_ENV, None)
+        shutil.rmtree(_default_test_conf_dir, ignore_errors=True)
+
 
 @pytest.fixture(scope="session")
 def event_loop():
@@ -96,10 +140,14 @@ def event_loop():
 
 @pytest.fixture(scope="function")
 def temp_dir() -> Generator[Path, None, None]:
-    """Create temp directory, auto-cleanup before and after test"""
-    shutil.rmtree(TEST_TMP_DIR, ignore_errors=True)
-    TEST_TMP_DIR.mkdir(parents=True, exist_ok=True)
-    yield TEST_TMP_DIR
+    """Create a unique temp directory per test, auto-cleanup.
+
+    Unique per test so parallel runs (pytest-xdist) don't wipe each other's data.
+    """
+    unique_dir = TEST_TMP_DIR / uuid.uuid4().hex[:8]
+    unique_dir.mkdir(parents=True, exist_ok=True)
+    yield unique_dir
+    shutil.rmtree(unique_dir, ignore_errors=True)
 
 
 @pytest.fixture(scope="function")
