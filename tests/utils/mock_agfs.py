@@ -122,8 +122,11 @@ class MockLocalAGFS:
         p.parent.mkdir(parents=True, exist_ok=True)
         if isinstance(content, str):
             p.write_text(content, encoding="utf-8")
-        else:
+        elif isinstance(content, (bytes, bytearray, memoryview)):
             p.write_bytes(content)
+        else:
+            # Streaming writers pass an iterable of byte chunks.
+            p.write_bytes(b"".join(content))
         return str(p)
 
     def write(self, path, content, ctx=None, **kwargs):
@@ -179,21 +182,12 @@ class MockLocalAGFS:
     def bind_request_context(self, ctx):
         return MagicMock(__enter__=lambda x: None, __exit__=lambda x, y, z: None)
 
-    def pathlock_acquire_tree(
-        self,
-        ctx,
-        path,
-        timeout_secs=0.0,
-        owner_lease_ref=None,
-    ):
-        del ctx, owner_lease_ref
-        with self._pathlocks_guard:
-            lock = self._pathlocks.setdefault(path, threading.Lock())
+    # -- pathlock -------------------------------------------------------------
+    # One non-reentrant lock per path. A lease owns the locks for its paths;
+    # acquiring with ``owner_lease_ref`` of a live lease is re-entrant and
+    # takes no new locks (the parent lease keeps holding them).
 
-        acquired = lock.acquire(timeout=timeout_secs)
-        if not acquired:
-            raise TimeoutError(f"timed out acquiring test path lock: {path}")
-
+    def _new_lease(self, paths, locks):
         lease_ref = str(uuid.uuid4())
         lease = {
             "lease_ref": lease_ref,
@@ -202,14 +196,112 @@ class MockLocalAGFS:
             "owned": True,
         }
         with self._pathlocks_guard:
-            self._pathlock_leases[lease_ref] = lock
+            self._pathlock_leases[lease_ref] = {"paths": list(paths), "locks": list(locks)}
         return lease
+
+    def _pathlock_acquire_paths(self, paths, timeout_secs=0.0, owner_lease_ref=None):
+        if owner_lease_ref is not None:
+            with self._pathlocks_guard:
+                reentrant = owner_lease_ref.get("lease_ref") in self._pathlock_leases
+            if reentrant:
+                return self._new_lease(paths, [])
+
+        acquired = []
+        for path in sorted(set(paths)):
+            with self._pathlocks_guard:
+                lock = self._pathlocks.setdefault(path, threading.Lock())
+            if not lock.acquire(timeout=timeout_secs):
+                for held in acquired:
+                    held.release()
+                raise TimeoutError(f"timed out acquiring test path lock: {path}")
+            acquired.append(lock)
+        return self._new_lease(paths, acquired)
+
+    def pathlock_acquire_tree(self, ctx, path, timeout_secs=0.0, owner_lease_ref=None):
+        del ctx
+        return self._pathlock_acquire_paths([path], timeout_secs, owner_lease_ref)
 
     pathlock_acquire_exact = pathlock_acquire_tree
 
+    def pathlock_acquire_tree_batch(self, ctx, paths, timeout_secs=0.0, owner_lease_ref=None):
+        del ctx
+        return self._pathlock_acquire_paths(paths, timeout_secs, owner_lease_ref)
+
+    pathlock_acquire_exact_batch = pathlock_acquire_tree_batch
+
+    def pathlock_acquire_exact_tree_batch(
+        self, ctx, exact_paths, tree_paths, timeout_secs=0.0, owner_lease_ref=None
+    ):
+        del ctx
+        return self._pathlock_acquire_paths(
+            [*exact_paths, *tree_paths], timeout_secs, owner_lease_ref
+        )
+
+    def pathlock_acquire_batch(self, ctx, requests, timeout_secs=0.0, owner_lease_ref=None):
+        del ctx
+        return self._pathlock_acquire_paths(
+            [request["path"] for request in requests], timeout_secs, owner_lease_ref
+        )
+
     def pathlock_release(self, ctx, owned_lease_ref):
+        del ctx
+        with self._pathlocks_guard:
+            entry = self._pathlock_leases.pop(owned_lease_ref["lease_ref"], None)
+        for lock in (entry or {}).get("locks", []):
+            lock.release()
+
+    def pathlock_release_selected(self, ctx, owned_lease_ref, lock_paths):
+        del ctx, owned_lease_ref, lock_paths
+
+    def pathlock_as_borrowed(self, ctx, owned_lease_ref):
+        del ctx
+        return {**owned_lease_ref, "owned": False}
+
+    def pathlock_refresh(self, ctx, owned_lease_ref):
+        del ctx
+        with self._pathlocks_guard:
+            alive = owned_lease_ref.get("lease_ref") in self._pathlock_leases
+        return "refreshed" if alive else "lost"
+
+    def pathlock_to_handoff(self, ctx, owned_lease_ref):
         del ctx
         lease_ref = owned_lease_ref["lease_ref"]
         with self._pathlocks_guard:
-            lock = self._pathlock_leases.pop(lease_ref)
-        lock.release()
+            entry = self._pathlock_leases.get(lease_ref, {"paths": []})
+        return {
+            "lease_ref": lease_ref,
+            "owner_id": owned_lease_ref.get("owner_id", "mock-local-agfs"),
+            "lock_paths": list(entry["paths"]),
+            "covered_paths": [],
+        }
+
+    def pathlock_handoff(self, ctx, owned_lease_ref):
+        # Real handoffs are adopted (and released) by a queue worker; the mock's
+        # queues never run, so free the locks now to avoid holding them forever.
+        del ctx
+        with self._pathlocks_guard:
+            entry = self._pathlock_leases.get(owned_lease_ref["lease_ref"])
+            locks = entry["locks"] if entry else []
+            if entry:
+                entry["locks"] = []
+        for lock in locks:
+            lock.release()
+
+    def pathlock_adopt(self, ctx, handoff_ref):
+        del ctx
+        with self._pathlocks_guard:
+            entry = self._pathlock_leases.pop(handoff_ref.get("lease_ref"), None)
+        if entry is None:
+            raise ValueError("pathlock handoff ref is not live")
+        return self._new_lease(entry["paths"], entry["locks"])
+
+    def pathlock_is_locked(self, ctx, path, ignore_stale=True):
+        del ctx, ignore_stale
+        with self._pathlocks_guard:
+            lock = self._pathlocks.get(path)
+        return lock is not None and lock.locked()
+
+    def pathlock_observe(self, ctx):
+        del ctx
+        with self._pathlocks_guard:
+            return {"active_leases": len(self._pathlock_leases)}

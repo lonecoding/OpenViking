@@ -186,10 +186,19 @@ def server_url(temp_dir):
     """
     import asyncio
 
+    from tests.server.conftest import _install_fake_embedder, _install_fake_vlm
+
+    # Keep the HTTP integration server offline: no real embedding/VLM calls.
+    patcher = pytest.MonkeyPatch()
+    _install_fake_embedder(patcher)
+    _install_fake_vlm(patcher)
+
     loop = asyncio.new_event_loop()
 
+    # Own workspace: function-scoped service fixtures use temp_dir / "data".
     svc = OpenVikingService(
-        path=str(temp_dir / "data"), user=UserIdentifier.the_default_user("test_user")
+        path=str(temp_dir / "http_server_data"),
+        user=UserIdentifier.the_default_user("test_user"),
     )
     loop.run_until_complete(svc.initialize())
 
@@ -203,7 +212,12 @@ def server_url(temp_dir):
 
     uvi_config = uvicorn.Config(fastapi_app, host="127.0.0.1", port=port, log_level="warning")
     server = uvicorn.Server(uvi_config)
-    thread = threading.Thread(target=server.run, daemon=True)
+    # Serve on the loop the service was initialized on: loop-bound components
+    # (e.g. the TaskTracker) refuse to be driven from a second event loop.
+    thread = threading.Thread(
+        target=lambda: loop.run_until_complete(server.serve()),
+        daemon=True,
+    )
     thread.start()
 
     # Wait for server ready
@@ -222,3 +236,4 @@ def server_url(temp_dir):
     thread.join(timeout=5)
     loop.run_until_complete(svc.close())
     loop.close()
+    patcher.undo()

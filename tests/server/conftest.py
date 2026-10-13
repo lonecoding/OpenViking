@@ -24,6 +24,7 @@ from openviking.server.identity import RequestContext, Role
 from openviking.service.core import OpenVikingService
 from openviking.service.task_tracker import get_task_tracker
 from openviking.storage.queuefs import QueueManager, SessionCommitMsg, get_queue_manager
+from openviking_cli.client.http import AsyncHTTPClient
 from openviking_cli.session.user_id import UserIdentifier
 from openviking_cli.utils.config.embedding_config import EmbeddingConfig
 from openviking_cli.utils.config.vlm_config import VLMConfig
@@ -249,7 +250,12 @@ async def client_with_resource(client, service, sample_markdown_file):
 
 @pytest_asyncio.fixture(scope="function")
 async def running_server(temp_dir: Path, monkeypatch):
-    """Start a real uvicorn server in a background thread."""
+    """Start a real uvicorn server in a background thread.
+
+    The service is initialized, served and closed on the server thread's own
+    event loop (as in production), because loop-bound components such as the
+    TaskTracker refuse to be driven from a second loop.
+    """
     fake_embedder_cls = _install_fake_embedder(monkeypatch)
     _install_fake_vlm(monkeypatch)
 
@@ -262,7 +268,15 @@ async def running_server(temp_dir: Path, monkeypatch):
     svc = OpenVikingService(
         path=str(temp_dir / "sdk_data"), user=UserIdentifier.the_default_user("sdk_test_user")
     )
-    await svc.initialize()
+    server_loop = asyncio.new_event_loop()
+
+    async def _on_server_loop(coro):
+        return await asyncio.wrap_future(asyncio.run_coroutine_threadsafe(coro, server_loop))
+
+    thread = threading.Thread(target=server_loop.run_forever, daemon=True)
+    thread.start()
+
+    await _on_server_loop(svc.initialize())
     svc.viking_fs.query_embedder = fake_embedder_cls()
     _install_session_commit_queue_fallback(svc, monkeypatch)
 
@@ -276,8 +290,7 @@ async def running_server(temp_dir: Path, monkeypatch):
 
     uvi_config = uvicorn.Config(fastapi_app, host="127.0.0.1", port=port, log_level="warning")
     server = uvicorn.Server(uvi_config)
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
+    serve_future = asyncio.run_coroutine_threadsafe(server.serve(), server_loop)
 
     # Wait for server ready
     for _ in range(50):
@@ -297,16 +310,37 @@ async def running_server(temp_dir: Path, monkeypatch):
 
     manager = fastapi_app.state.api_key_manager
     sdk_account_id = "sdk_test_account"
-    sdk_user_key = await manager.create_account(sdk_account_id, "sdk_test_user")
+    sdk_user_key = await _on_server_loop(manager.create_account(sdk_account_id, "sdk_test_user"))
     sdk_ctx = RequestContext(
         user=UserIdentifier(sdk_account_id, "sdk_test_user"),
         role=Role.ADMIN,
     )
-    await svc.initialize_account_directories(sdk_ctx)
-    await svc.initialize_user_directories(sdk_ctx)
+    await _on_server_loop(svc.initialize_account_directories(sdk_ctx))
+    await _on_server_loop(svc.initialize_user_directories(sdk_ctx))
 
     yield port, svc, sdk_user_key
 
     server.should_exit = True
+    await asyncio.wrap_future(serve_future)
+    await _on_server_loop(svc.close())
+    server_loop.call_soon_threadsafe(server_loop.stop)
     thread.join(timeout=5)
-    await svc.close()
+    server_loop.close()
+
+
+@pytest_asyncio.fixture()
+async def http_client(running_server):
+    """Create an AsyncHTTPClient connected to the running server."""
+    port, svc, sdk_user_key = running_server
+    client = AsyncHTTPClient(
+        url=f"http://127.0.0.1:{port}",
+        api_key=sdk_user_key,
+        account="",
+        user="",
+        timeout=33.0,
+        extra_headers={},
+        profile_enabled=False,
+    )
+    await client.initialize()
+    yield client, svc
+    await client.close()
